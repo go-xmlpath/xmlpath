@@ -5,6 +5,15 @@ import (
 	"io"
 )
 
+// Node is an item in an xml tree that was compiled to
+// be processed via xml paths. A node may represent:
+//
+//     - An element in the xml document (<body>)
+//     - An attribute of an element in the xml document (href="...")
+//     - A comment in the xml document (<!--...-->)
+//     - A processing instruction in the xml document (<?...?>)
+//     - Some text within the xml document
+//
 type Node struct {
 	kind nodeKind
 	name xml.Name
@@ -31,10 +40,82 @@ const (
 	procInstNode
 )
 
+// String returns the string value of node.
+//
+// The string value of a node is:
+//
+//     - For element nodes, the concatenation of all text nodes within the element.
+//     - For text nodes, the text itself.
+//     - For attribute nodes, the attribute value.
+//     - For comment nodes, the text within the comment delimiters.
+//     - For processing instruction nodes, the content of the instruction.
+//
+func (node *Node) String() string {
+	if node.kind == attrNode {
+		return node.attr
+	}
+	return string(node.Bytes())
+}
+
+// Bytes returns the string value of node as a byte slice.
+// See Node.String for a description of what the string value of a node is.
+func (node *Node) Bytes() []byte {
+	if node.kind == attrNode {
+		return []byte(node.attr)
+	}
+	if node.kind != startNode {
+		return node.text
+	}
+	var text []byte
+	for i := node.pos; i < node.end; i++ {
+		if node.nodes[i].kind == textNode {
+			text = append(text, node.nodes[i].text...)
+		}
+	}
+	return text
+}
+
+// equals returns whether the string value of node is equal to s,
+// without allocating memory.
+func (node *Node) equals(s string) bool {
+	if node.kind == attrNode {
+		return s == node.attr
+	}
+	if node.kind != startNode {
+		if len(s) != len(node.text) {
+			return false
+		}
+		for i := range s {
+			if s[i] != node.text[i] {
+				return false
+			}
+		}
+		return true
+	}
+	si := 0
+	for i := node.pos; i < node.end; i++ {
+		if node.nodes[i].kind == textNode {
+			for _, c := range node.nodes[i].text {
+				if si > len(s) {
+					return false
+				}
+				if s[si] != c {
+					return false
+				}
+				si++
+			}
+		}
+	}
+	return si == len(s)
+}
+
+// Parse reads an xml document from r, parses it, and returns its root node.
 func Parse(r io.Reader) (*Node, error) {
 	return ParseDecoder(xml.NewDecoder(r))
 }
 
+// ParseDecoder parses the xml document being decoded by d and returns
+// its root node.
 func ParseDecoder(d *xml.Decoder) (*Node, error) {
 	var nodes []Node
 	var text []byte

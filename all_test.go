@@ -30,30 +30,54 @@ func (s *BasicSuite) TestLibraryTable(c *C) {
 	node, err := xmlpath.Parse(bytes.NewBuffer(libraryXml))
 	c.Assert(err, IsNil)
 	for _, test := range libraryTable {
+		cmt := Commentf("xml path: %s", test.path)
 		path, err := xmlpath.Compile(test.path)
 		if want, ok := test.result.(cerror); ok {
-			c.Assert(err, ErrorMatches, string(want))
-			c.Assert(path, IsNil)
+			c.Assert(err, ErrorMatches, string(want), cmt)
+			c.Assert(path, IsNil, cmt)
 			continue
 		}
 		c.Assert(err, IsNil)
-		cmt := Commentf("xml path: %s", test.path)
 		switch want := test.result.(type) {
 		case string:
 			got, ok := path.String(node)
 			c.Assert(ok, Equals, true, cmt)
 			c.Assert(got, Equals, want, cmt)
+			c.Assert(path.Exists(node), Equals, true, cmt)
+			iter := path.Iter(node)
+			iter.Next()
+			node := iter.Node()
+			c.Assert(node.String(), Equals, want, cmt)
+			c.Assert(string(node.Bytes()), Equals, want, cmt)
 		case []string:
-			ss, ok := path.Strings(node)
-			c.Assert(ss, DeepEquals, want, cmt)
-			c.Assert(ok, Equals, len(want) > 0, cmt)
+			var alls []string
+			var allb []string
+			iter := path.Iter(node)
+			for iter.Next() {
+				alls = append(alls, iter.Node().String())
+				allb = append(allb, string(iter.Node().Bytes()))
+			}
+			c.Assert(alls, DeepEquals, want, cmt)
+			c.Assert(allb, DeepEquals, want, cmt)
+			s, sok := path.String(node)
+			b, bok := path.Bytes(node)
+			if len(want) == 0 {
+				c.Assert(sok, Equals, false, cmt)
+				c.Assert(bok, Equals, false, cmt)
+				c.Assert(s, Equals, "")
+				c.Assert(b, IsNil)
+			} else {
+				c.Assert(sok, Equals, true, cmt)
+				c.Assert(bok, Equals, true, cmt)
+				c.Assert(s, Equals, alls[0], cmt)
+				c.Assert(string(b), Equals, alls[0], cmt)
+				c.Assert(path.Exists(node), Equals, true, cmt)
+			}
 		case exists:
 			wantb := bool(want)
 			ok := path.Exists(node)
 			c.Assert(ok, Equals, wantb, cmt)
 			_, ok = path.String(node)
-			c.Assert(ok, Equals, wantb, cmt)
-			_, ok = path.Strings(node)
 			c.Assert(ok, Equals, wantb, cmt)
 		}
 	}
@@ -63,6 +87,17 @@ type cerror string
 type exists bool
 
 var libraryTable = []struct{ path string; result interface{} }{
+	// These are the examples in the package documentation:
+	{"/library/book/isbn", "0836217462"},
+	{"library/*/isbn", "0836217462"},
+	{"/library/book/../book/./isbn", "0836217462"},
+	{"/library/book/character[2]/name", "Snoopy"},
+	{"/library/book/character[born='1950-10-04']/name", "Snoopy"},
+	{"/library/book//node()[@id='PP']/name", "Peppermint Patty"},
+	{"//book[author/@id='CMS']/title", "Being a Dog Is a Full-Time Job"},
+	{"/library/book/preceding::comment()", " Great book. "},
+
+	// A few simple
 	{"/library/book/isbn", exists(true)},
 	{"/library/isbn", exists(false)},
 	{"/library/book/isbn/bad", exists(false)},
@@ -144,8 +179,8 @@ var libraryTable = []struct{ path string; result interface{} }{
 	{"/library/book/author/born/preceding::author/name", []string{"Charles M Schulz"}},
 
 	// Comments.
-	{"/library/comment()", []string{" First book. ", " Second book. "}},
-	{"//self::comment()", []string{" First book. ", " Second book. "}},
+	{"/library/comment()", []string{" Great book. ", " Another great book. "}},
+	{"//self::comment()", []string{" Great book. ", " Another great book. "}},
 	{`comment("")`, cerror(`.*: comment\(\) has no arguments`)},
 
 
@@ -154,16 +189,25 @@ var libraryTable = []struct{ path string; result interface{} }{
 	{`/library/book/author/processing-instruction("echo")`, `"go rocks"`},
 	{`/library//processing-instruction("echo")`, `"go rocks"`},
 	{`/library/book/author/processing-instruction("foo")`, exists(false)},
-	{`/library/book/author/processing-instruction(")`, cerror(`.*: missing "`)},
+	{`/library/book/author/processing-instruction(")`, cerror(`.*: missing '"'`)},
+
+	// Predicates.
+	{"library/book[@id='b0883556316']/isbn", []string{"0883556316"}},
+	{"library/book[isbn='0836217462']/character[born='1950-10-04']/name", []string{"Snoopy"}},
+	{"library/book[quote]/@id", []string{"b0836217462"}},
+	{"library/book[./character/born='1922-07-17']/@id", []string{"b0883556316"}},
+	{"library/book[2]/isbn", []string{"0883556316"}},
+	{"library/book[0]/isbn", cerror(".*: positions start at 1")},
+	{"library/book[-1]/isbn", cerror(".*: positions must be positive")},
 
 	// Bogus expressions.
-	{"/foo)", cerror(`compiling xml path "/foo\)":4: expected '/' but got '\)'`)},
+	{"/foo)", cerror(`compiling xml path "/foo\)":4: unexpected '\)'`)},
 }
 
 var libraryXml = []byte(
 `<?xml version="1.0"?> 
 <library>
-  <!-- First book. -->
+  <!-- Great book. -->
   <book id="b0836217462" available="true">
     <isbn>0836217462</isbn>
     <title lang="en">Being a Dog Is a Full-Time Job</title>
@@ -195,7 +239,7 @@ var libraryXml = []byte(
       <qualification>bossy, crabby and selfish</qualification>
     </character>
   </book>
-  <!-- Second book. -->
+  <!-- Another great book. -->
   <book id="b0883556316" available="true">
     <isbn>0883556316</isbn>
     <title lang="en">Barney Google and Snuffy Smith</title>
