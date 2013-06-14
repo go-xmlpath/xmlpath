@@ -114,6 +114,16 @@ func Parse(r io.Reader) (*Node, error) {
 	return ParseDecoder(xml.NewDecoder(r))
 }
 
+// ParseHTML reads an HTML-like document from r, parses it, and returns
+// its root node.
+func ParseHTML(r io.Reader) (*Node, error) {
+	d := xml.NewDecoder(r)
+	d.Strict = false
+	d.AutoClose = xml.HTMLAutoClose
+	d.Entity = xml.HTMLEntity
+	return ParseDecoder(d)
+}
+
 // ParseDecoder parses the xml document being decoded by d and returns
 // its root node.
 func ParseDecoder(d *xml.Decoder) (*Node, error) {

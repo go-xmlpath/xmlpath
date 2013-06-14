@@ -2,6 +2,7 @@ package xmlpath_test
 
 import (
 	"bytes"
+	"encoding/xml"
 	. "launchpad.net/gocheck"
 	"launchpad.net/xmlpath"
 	"testing"
@@ -24,6 +25,17 @@ func (s *BasicSuite) TestRootText(c *C) {
 	result, ok := path.String(node)
 	c.Assert(ok, Equals, true)
 	c.Assert(result, Equals, "abcdefg")
+}
+
+var trivialHtml = []byte(`<root><foo>&lt;a&gt;</root>`)
+
+func (s *BasicSuite) TestHTML(c *C) {
+	node, err := xmlpath.ParseHTML(bytes.NewBuffer(trivialHtml))
+	c.Assert(err, IsNil)
+	path := xmlpath.MustCompile("/root/foo")
+	result, ok := path.String(node)
+	c.Assert(ok, Equals, true)
+	c.Assert(result, Equals, "<a>")
 }
 
 func (s *BasicSuite) TestLibraryTable(c *C) {
@@ -295,6 +307,16 @@ func (s *BasicSuite) BenchmarkSimplePathString(c *C) {
 	}
 	c.StopTimer()
 	c.Assert(str, Equals, "m1.small")
+}
+
+func (s *BasicSuite) BenchmarkSimplePathStringUnmarshal(c *C) {
+	// For a vague comparison.
+	var result struct{ Str string `xml:"reservationSet>item>instancesSet>item>instanceType"` }
+	for i := 0; i < c.N; i++ {
+		xml.Unmarshal(instancesXml, &result)
+	}
+	c.StopTimer()
+	c.Assert(result.Str, Equals, "m1.large")
 }
 
 func (s *BasicSuite) BenchmarkSimplePathExists(c *C) {
