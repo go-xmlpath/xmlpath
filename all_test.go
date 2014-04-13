@@ -213,8 +213,9 @@ var libraryTable = []struct{ path string; result interface{} }{
 	{"library/book[2]/isbn", []string{"0883556316"}},
 	{"library/book[0]/isbn", cerror(".*: positions start at 1")},
 	{"library/book[-1]/isbn", cerror(".*: positions must be positive")},
-	{"//title[contains(.,'ney Google and')]", []string{"Barney Google and Snuffy Smith"}},
-	{"//@id[contains(.,'0836')]", []string{"b0836217462"}},
+	{"//title[contains(.,'ney Google and')]", "Barney Google and Snuffy Smith"},
+	{"//@id[contains(.,'0836')]", "b0836217462"},
+	{"//*[contains(born,'1922')]/name", "Charles M Schulz"},
 
 	// Bogus expressions.
 	{"/foo)", cerror(`compiling xml path "/foo\)":4: unexpected '\)'`)},
