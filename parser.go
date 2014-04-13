@@ -3,6 +3,7 @@ package xmlpath
 import (
 	"encoding/xml"
 	"io"
+	"strings"
 )
 
 // Node is an item in an xml tree that was compiled to
@@ -66,7 +67,13 @@ func (node *Node) Bytes() []byte {
 	if node.kind != startNode {
 		return node.text
 	}
-	var text []byte
+	size := 0
+	for i := node.pos; i < node.end; i++ {
+		if node.nodes[i].kind == textNode {
+			size += len(node.nodes[i].text)
+		}
+	}
+	text := make([]byte, 0, size)
 	for i := node.pos; i < node.end; i++ {
 		if node.nodes[i].kind == textNode {
 			text = append(text, node.nodes[i].text...)
@@ -107,6 +114,53 @@ func (node *Node) equals(s string) bool {
 		}
 	}
 	return si == len(s)
+}
+
+// contains returns whether the string value of node contains s,
+// without allocating memory.
+func (node *Node) contains(s string) (ok bool) {
+	if len(s) == 0 {
+		return true
+	}
+	if node.kind == attrNode {
+		return strings.Contains(node.attr, s)
+	}
+	s0 := s[0]
+	for i := node.pos; i < node.end; i++ {
+		if node.nodes[i].kind == textNode {
+			text := node.nodes[i].text
+		NextTry:
+			for ci, c := range text {
+				if c != s0 {
+					continue
+				}
+				si := 1
+				for ci++; ci < len(text) && si < len(s); ci++ {
+					if s[si] != text[ci] {
+						continue NextTry
+					}
+					si++
+				}
+				if si == len(s) {
+					return true
+				}
+				for j := i+1; j < node.end; j++ {
+					if node.nodes[j].kind == textNode {
+						for _, c := range node.nodes[j].text {
+							if s[si] != c {
+								continue NextTry
+							}
+							si++
+							if si == len(s) {
+								return true
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	return false
 }
 
 // Parse reads an xml document from r, parses it, and returns its root node.

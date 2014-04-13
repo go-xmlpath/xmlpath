@@ -136,6 +136,7 @@ var libraryTable = []struct{ path string; result interface{} }{
 
 	// Unsupported axis and note test.
 	{"/foo()", cerror(`compiling xml path "/foo\(\)":5: unsupported expression: foo\(\)`)},
+	{"/node(", cerror(`compiling xml path "/node\(":6: node\(\) missing '\)'`)},
 	{"/foo::node()", cerror(`compiling xml path "/foo::node\(\)":6: unsupported axis: "foo"`)},
 
 	// The attribute axis.
@@ -205,16 +206,21 @@ var libraryTable = []struct{ path string; result interface{} }{
 
 	// Predicates.
 	{"library/book[@id='b0883556316']/isbn", []string{"0883556316"}},
+	{"library/book[ @id = 'b0883556316' ]/isbn", []string{"0883556316"}},
 	{"library/book[isbn='0836217462']/character[born='1950-10-04']/name", []string{"Snoopy"}},
 	{"library/book[quote]/@id", []string{"b0836217462"}},
 	{"library/book[./character/born='1922-07-17']/@id", []string{"b0883556316"}},
 	{"library/book[2]/isbn", []string{"0883556316"}},
 	{"library/book[0]/isbn", cerror(".*: positions start at 1")},
 	{"library/book[-1]/isbn", cerror(".*: positions must be positive")},
-	//{`//text()[contains(., "Dog")]`, []string{"Being a Dog Is a Full-Time Job"}},
+	{"//title[contains(.,'ney Google and')]", []string{"Barney Google and Snuffy Smith"}},
+	{"//@id[contains(.,'0836')]", []string{"b0836217462"}},
 
 	// Bogus expressions.
 	{"/foo)", cerror(`compiling xml path "/foo\)":4: unexpected '\)'`)},
+
+	// Whitespace handling.
+	{" / descendant-or-self :: node() // child :: book / child :: * [ contains( . , '083' ) ] ", "0836217462"},
 }
 
 var libraryXml = []byte(
@@ -255,7 +261,7 @@ var libraryXml = []byte(
   <!-- Another great book. -->
   <book id="b0883556316" available="true">
     <isbn>0883556316</isbn>
-    <title lang="en">Barney Google and Snuffy Smith</title>
+    <title lang="en">Barney <i>Google</i> and Snuffy Smith</title>
     <author id="CMS">
       <name>Charles M Schulz</name>
       <born>1922-11-26</born>

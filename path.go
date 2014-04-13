@@ -128,6 +128,10 @@ func (s *pathStepState) next() bool {
 			return true
 		}
 		switch pred := s.step.pred.(type) {
+		case positionPredicate:
+			if pred.pos == s.pos {
+				return true
+			}
 		case existsPredicate:
 			if pred.path.Exists(s.node) {
 				return true
@@ -139,12 +143,15 @@ func (s *pathStepState) next() bool {
 					return true
 				}
 			}
-		case positionPredicate:
-			if pred.pos == s.pos {
-				return true
+		case containsPredicate:
+			iter := pred.path.Iter(s.node)
+			for iter.Next() {
+				if iter.Node().contains(pred.value) {
+					return true
+				}
 			}
 		default:
-			panic(fmt.Sprintf("unknown predicate type: %#v", s.step.pred))
+			panic(fmt.Sprintf("internal error: unknown predicate type: %#v", s.step.pred))
 		}
 	}
 	return false
@@ -334,17 +341,22 @@ func (s *pathStepState) _next() bool {
 	return false
 }
 
+type positionPredicate struct {
+	pos int
+}
+
 type existsPredicate struct {
 	path *Path
 }
 
 type equalsPredicate struct {
-	path *Path
+	path  *Path
 	value string
 }
 
-type positionPredicate struct {
-	pos int
+type containsPredicate struct {
+	path  *Path
+	value string
 }
 
 type pathStep struct {
@@ -385,8 +397,8 @@ func Compile(path string) (*Path, error) {
 }
 
 type pathCompiler struct {
-	path  string
-	i     int
+	path string
+	i    int
 }
 
 func (c *pathCompiler) errorf(format string, args ...interface{}) error {
@@ -399,7 +411,9 @@ func (c *pathCompiler) parsePath() (path *Path, err error) {
 	for {
 		step := pathStep{axis: "child"}
 
+		c.skipSpaces()
 		if c.i == 0 && c.skipByte('/') {
+			c.skipSpaces()
 			step.root = true
 			if len(c.path) == 1 {
 				step.name = "*"
@@ -420,6 +434,7 @@ func (c *pathCompiler) parsePath() (path *Path, err error) {
 			mark := c.i
 			if c.skipName() {
 				step.name = c.path[mark:c.i]
+				c.skipSpaces()
 			}
 			if step.name == "" {
 				return nil, c.errorf("missing name")
@@ -436,6 +451,7 @@ func (c *pathCompiler) parsePath() (path *Path, err error) {
 					if !c.skipByte(':') {
 						return nil, c.errorf("missing ':'")
 					}
+					c.skipSpaces()
 					switch step.name {
 					case "attribute":
 						step.kind = attrNode
@@ -454,8 +470,11 @@ func (c *pathCompiler) parsePath() (path *Path, err error) {
 						return nil, c.errorf("missing name")
 					}
 					step.name = c.path[mark:c.i]
+
+					c.skipSpaces()
 				}
 				if c.skipByte('(') {
+					c.skipSpaces()
 					conflict := step.kind != anyNode
 					switch step.name {
 					case "node":
@@ -473,30 +492,53 @@ func (c *pathCompiler) parsePath() (path *Path, err error) {
 						return nil, c.errorf("%s() cannot succeed on axis %q", step.name, step.axis)
 					}
 
+					name := step.name
 					literal, err := c.parseLiteral()
 					if err == errNoLiteral {
 						step.name = "*"
 					} else if err != nil {
 						return nil, c.errorf("%v", err)
 					} else if step.kind == procInstNode {
+						c.skipSpaces()
 						step.name = literal
 					} else {
-						return nil, c.errorf("%s() has no arguments", step.name)
+						return nil, c.errorf("%s() has no arguments", name)
 					}
 					if !c.skipByte(')') {
-						return nil, c.errorf("missing )")
+						return nil, c.errorf("%s() missing ')'", name)
 					}
+					c.skipSpaces()
 				} else if step.name == "*" && step.kind == anyNode {
 					step.kind = startNode
 				}
 			}
 		}
 		if c.skipByte('[') {
+			c.skipSpaces()
 			if pos, ok := c.parseInt(); ok {
 				if pos == 0 {
 					return nil, c.errorf("positions start at 1")
 				}
 				step.pred = positionPredicate{pos}
+			} else if c.skipString("contains(") {
+				path, err := c.parsePath()
+				if err != nil {
+					return nil, err
+				}
+				c.skipSpaces()
+				if !c.skipByte(',') {
+					return nil, c.errorf("contains() expected ',' followed by a literal string")
+				}
+				c.skipSpaces()
+				value, err := c.parseLiteral()
+				if err != nil {
+					return nil, err
+				}
+				c.skipSpaces()
+				if !c.skipByte(')') {
+					return nil, c.errorf("contains() missing ')'")
+				}
+				step.pred = containsPredicate{path, value}
 			} else {
 				path, err := c.parsePath()
 				if err != nil {
@@ -507,7 +549,9 @@ func (c *pathCompiler) parsePath() (path *Path, err error) {
 						return nil, c.errorf("positions must be positive")
 					}
 				}
+				c.skipSpaces()
 				if c.skipByte('=') {
+					c.skipSpaces()
 					value, err := c.parseLiteral()
 					if err != nil {
 						return nil, c.errorf("%v", err)
@@ -517,9 +561,11 @@ func (c *pathCompiler) parsePath() (path *Path, err error) {
 					step.pred = existsPredicate{path}
 				}
 			}
+			c.skipSpaces()
 			if !c.skipByte(']') {
 				return nil, c.errorf("expected ']'")
 			}
+			c.skipSpaces()
 		}
 		steps = append(steps, step)
 		//fmt.Printf("step: %#v\n", step)
@@ -541,14 +587,14 @@ func (c *pathCompiler) parseLiteral() (string, error) {
 		if !c.skipByteFind('"') {
 			return "", fmt.Errorf(`missing '"'`)
 		}
-		return c.path[mark:c.i-1], nil
+		return c.path[mark : c.i-1], nil
 	}
 	if c.skipByte('\'') {
 		mark := c.i
 		if !c.skipByteFind('\'') {
 			return "", fmt.Errorf(`missing "'"`)
 		}
-		return c.path[mark:c.i-1], nil
+		return c.path[mark : c.i-1], nil
 	}
 	return "", errNoLiteral
 }
@@ -577,7 +623,7 @@ func (c *pathCompiler) skipByte(b byte) bool {
 func (c *pathCompiler) skipByteFind(b byte) bool {
 	for i := c.i; i < len(c.path); i++ {
 		if c.path[i] == b {
-			c.i = i+1
+			c.i = i + 1
 			return true
 		}
 	}
@@ -586,6 +632,23 @@ func (c *pathCompiler) skipByteFind(b byte) bool {
 
 func (c *pathCompiler) peekByte(b byte) bool {
 	return c.i < len(c.path) && c.path[c.i] == b
+}
+
+func (c *pathCompiler) skipSpaces() {
+	for c.i < len(c.path) {
+		if c.path[c.i] != ' ' {
+			break
+		}
+		c.i++
+	}
+}
+
+func (c *pathCompiler) skipString(s string) bool {
+	if c.i+len(s) <= len(c.path) && c.path[c.i:c.i+len(s)] == s {
+		c.i += len(s)
+		return true
+	}
+	return false
 }
 
 func (c *pathCompiler) skipName() bool {
