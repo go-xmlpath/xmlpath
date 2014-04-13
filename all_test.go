@@ -211,6 +211,7 @@ var libraryTable = []struct{ path string; result interface{} }{
 	{"library/book[2]/isbn", []string{"0883556316"}},
 	{"library/book[0]/isbn", cerror(".*: positions start at 1")},
 	{"library/book[-1]/isbn", cerror(".*: positions must be positive")},
+	//{`//text()[contains(., "Dog")]`, []string{"Being a Dog Is a Full-Time Job"}},
 
 	// Bogus expressions.
 	{"/foo)", cerror(`compiling xml path "/foo\)":4: unexpected '\)'`)},

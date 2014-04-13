@@ -127,21 +127,24 @@ func (s *pathStepState) next() bool {
 		if s.step.pred == nil {
 			return true
 		}
-		if s.step.pred.bval {
-			if s.step.pred.path.Exists(s.node) {
+		switch pred := s.step.pred.(type) {
+		case existsPredicate:
+			if pred.path.Exists(s.node) {
 				return true
 			}
-		} else if s.step.pred.path != nil {
-			iter := s.step.pred.path.Iter(s.node)
+		case equalsPredicate:
+			iter := pred.path.Iter(s.node)
 			for iter.Next() {
-				if iter.Node().equals(s.step.pred.sval) {
+				if iter.Node().equals(pred.value) {
 					return true
 				}
 			}
-		} else {
-			if s.step.pred.ival == s.pos {
+		case positionPredicate:
+			if pred.pos == s.pos {
 				return true
 			}
+		default:
+			panic(fmt.Sprintf("unknown predicate type: %#v", s.step.pred))
 		}
 	}
 	return false
@@ -331,11 +334,17 @@ func (s *pathStepState) _next() bool {
 	return false
 }
 
-type pathPredicate struct {
+type existsPredicate struct {
 	path *Path
-	sval string
-	ival int
-	bval bool
+}
+
+type equalsPredicate struct {
+	path *Path
+	value string
+}
+
+type positionPredicate struct {
+	pos int
 }
 
 type pathStep struct {
@@ -343,7 +352,7 @@ type pathStep struct {
 	axis string
 	name string
 	kind nodeKind
-	pred *pathPredicate
+	pred interface{}
 }
 
 func (step *pathStep) match(node *Node) bool {
@@ -483,12 +492,11 @@ func (c *pathCompiler) parsePath() (path *Path, err error) {
 			}
 		}
 		if c.skipByte('[') {
-			step.pred = &pathPredicate{}
-			if ival, ok := c.parseInt(); ok {
-				if ival == 0 {
+			if pos, ok := c.parseInt(); ok {
+				if pos == 0 {
 					return nil, c.errorf("positions start at 1")
 				}
-				step.pred.ival = ival
+				step.pred = positionPredicate{pos}
 			} else {
 				path, err := c.parsePath()
 				if err != nil {
@@ -499,15 +507,14 @@ func (c *pathCompiler) parsePath() (path *Path, err error) {
 						return nil, c.errorf("positions must be positive")
 					}
 				}
-				step.pred.path = path
 				if c.skipByte('=') {
-					sval, err := c.parseLiteral()
+					value, err := c.parseLiteral()
 					if err != nil {
 						return nil, c.errorf("%v", err)
 					}
-					step.pred.sval = sval
+					step.pred = equalsPredicate{path, value}
 				} else {
-					step.pred.bval = true
+					step.pred = existsPredicate{path}
 				}
 			}
 			if !c.skipByte(']') {
