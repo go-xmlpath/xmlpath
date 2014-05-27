@@ -3,9 +3,10 @@ package xmlpath_test
 import (
 	"bytes"
 	"encoding/xml"
-	. "launchpad.net/gocheck"
-	"launchpad.net/xmlpath"
 	"testing"
+
+	. "gopkg.in/check.v1"
+	"gopkg.in/xmlpath.v1"
 )
 
 func Test(t *testing.T) {
@@ -27,12 +28,12 @@ func (s *BasicSuite) TestRootText(c *C) {
 	c.Assert(result, Equals, "abcdefg")
 }
 
-var trivialHtml = []byte(`<root><foo>&lt;a&gt;</root>`)
+var trivialHtml = []byte(`<i>&lt;a&gt;`)
 
 func (s *BasicSuite) TestHTML(c *C) {
 	node, err := xmlpath.ParseHTML(bytes.NewBuffer(trivialHtml))
 	c.Assert(err, IsNil)
-	path := xmlpath.MustCompile("/root/foo")
+	path := xmlpath.MustCompile("//i")
 	result, ok := path.String(node)
 	c.Assert(ok, Equals, true)
 	c.Assert(result, Equals, "<a>")
@@ -98,7 +99,10 @@ func (s *BasicSuite) TestLibraryTable(c *C) {
 type cerror string
 type exists bool
 
-var libraryTable = []struct{ path string; result interface{} }{
+var libraryTable = []struct {
+	path   string
+	result interface{}
+}{
 	// These are the examples in the package documentation:
 	{"/library/book/isbn", "0836217462"},
 	{"library/*/isbn", "0836217462"},
@@ -196,7 +200,6 @@ var libraryTable = []struct{ path string; result interface{} }{
 	{"//self::comment()", []string{" Great book. ", " Another great book. "}},
 	{`comment("")`, cerror(`.*: comment\(\) has no arguments`)},
 
-
 	// Processing instructions.
 	{`/library/book/author/processing-instruction()`, `"go rocks"`},
 	{`/library/book/author/processing-instruction("echo")`, `"go rocks"`},
@@ -224,8 +227,8 @@ var libraryTable = []struct{ path string; result interface{} }{
 	{" / descendant-or-self :: node() // child :: book / child :: * [ contains( . , '083' ) ] ", "0836217462"},
 }
 
-var libraryXml = []byte(
-`<?xml version="1.0"?> 
+var libraryXml = []byte(`
+<?xml version="1.0"?> 
 <library>
   <!-- Great book. -->
   <book id="b0836217462" available="true">
@@ -319,7 +322,9 @@ func (s *BasicSuite) BenchmarkSimplePathString(c *C) {
 
 func (s *BasicSuite) BenchmarkSimplePathStringUnmarshal(c *C) {
 	// For a vague comparison.
-	var result struct{ Str string `xml:"reservationSet>item>instancesSet>item>instanceType"` }
+	var result struct {
+		Str string `xml:"reservationSet>item>instancesSet>item>instanceType"`
+	}
 	for i := 0; i < c.N; i++ {
 		xml.Unmarshal(instancesXml, &result)
 	}
@@ -340,10 +345,8 @@ func (s *BasicSuite) BenchmarkSimplePathExists(c *C) {
 	c.Assert(exists, Equals, true)
 }
 
-
-
-var instancesXml = []byte(
-`<DescribeInstancesResponse xmlns="http://ec2.amazonaws.com/doc/2011-12-15/">
+var instancesXml = []byte(`
+  <DescribeInstancesResponse xmlns="http://ec2.amazonaws.com/doc/2011-12-15/">
   <requestId>98e3c9a4-848c-4d6d-8e8a-b1bdEXAMPLE</requestId>
   <reservationSet>
     <item>
