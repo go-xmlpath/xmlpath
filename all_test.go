@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	. "gopkg.in/check.v1"
-	"gopkg.in/xmlpath.v1"
+	"gopkg.in/xmlpath.v2"
 )
 
 func Test(t *testing.T) {
@@ -28,15 +28,29 @@ func (s *BasicSuite) TestRootText(c *C) {
 	c.Assert(result, Equals, "abcdefg")
 }
 
-var trivialHtml = []byte(`<i>&lt;a&gt;`)
+var htmlTable = []struct {
+	html   string
+	path   string
+	result interface{}
+}{
+	{"<html><body><li>a<li>b", "/html/body/li", "a"},
+	{"<li>a<li>b", "/html/body/li", "a"},
+	{"&lt;a&gt;", "/html/body", "<a>"},
+	{"<script>if(1<2||2>1){}</script>", "/html/head/script", "if(1<2||2>1){}"},
+	{"<!DOCTYPE HTML>\n<html><body>text", "/html/body", "text"},
+}
 
 func (s *BasicSuite) TestHTML(c *C) {
-	node, err := xmlpath.ParseHTML(bytes.NewBuffer(trivialHtml))
-	c.Assert(err, IsNil)
-	path := xmlpath.MustCompile("//i")
-	result, ok := path.String(node)
-	c.Assert(ok, Equals, true)
-	c.Assert(result, Equals, "<a>")
+	for _, test := range htmlTable {
+		c.Logf("Running test: %v", test)
+		node, err := xmlpath.ParseHTML(bytes.NewBuffer([]byte(test.html)))
+		c.Assert(err, IsNil)
+		path, err := xmlpath.Compile(test.path)
+		c.Assert(err, IsNil)
+		result, ok := path.String(node)
+		c.Assert(ok, Equals, true)
+		c.Assert(result, Equals, test.result)
+	}
 }
 
 func (s *BasicSuite) TestLibraryTable(c *C) {

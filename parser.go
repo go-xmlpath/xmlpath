@@ -277,8 +277,13 @@ func ParseDecoder(d *xml.Decoder) (*Node, error) {
 	return nil, io.EOF
 }
 
-// ParseHTML reads an HTML-like document from r, parses it, and returns
-// its root node.
+// ParseHTML reads an HTML document from r, parses it using a proper HTML
+// parser, and returns its root node.
+//
+// The document will be processed as a properly structured HTML document,
+// emulating the behavior of a browser when processing it. This includes
+// putting the content inside proper <html> and <body> tags, if the
+// provided text misses them.
 func ParseHTML(r io.Reader) (*Node, error) {
 	ns, err := html.ParseFragment(r, nil)
 	if err != nil {
@@ -290,11 +295,12 @@ func ParseHTML(r io.Reader) (*Node, error) {
 
 	n := ns[0]
 
+	// The root node.
+	nodes = append(nodes, Node{kind: startNode})
+
 	for n != nil {
 		switch n.Type {
 		case html.DocumentNode:
-			// The root node.
-			nodes = append(nodes, Node{kind: startNode})
 		case html.ElementNode:
 			nodes = append(nodes, Node{
 				kind: startNode,
@@ -329,7 +335,7 @@ func ParseHTML(r io.Reader) (*Node, error) {
 		}
 
 		for n != nil {
-			if n.Type == html.ElementNode || n.Type == html.DocumentNode {
+			if n.Type == html.ElementNode {
 				nodes = append(nodes, Node{kind: endNode})
 			}
 			if n.NextSibling != nil {
@@ -339,6 +345,9 @@ func ParseHTML(r io.Reader) (*Node, error) {
 			n = n.Parent
 		}
 	}
+
+	// Close the root node.
+	nodes = append(nodes, Node{kind: endNode})
 
 	stack := make([]*Node, 0, len(nodes))
 	downs := make([]*Node, len(nodes))
