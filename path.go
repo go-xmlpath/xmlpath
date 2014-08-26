@@ -124,35 +124,52 @@ func (s *pathStepState) init(node *Node) {
 func (s *pathStepState) next() bool {
 	for s._next() {
 		s.pos++
-		if s.step.pred == nil {
+		if s.step.pred == nil || s.test(s.step.pred) {
 			return true
 		}
-		switch pred := s.step.pred.(type) {
-		case positionPredicate:
-			if pred.pos == s.pos {
-				return true
-			}
-		case existsPredicate:
-			if pred.path.Exists(s.node) {
-				return true
-			}
-		case equalsPredicate:
-			iter := pred.path.Iter(s.node)
-			for iter.Next() {
-				if iter.Node().equals(pred.value) {
-					return true
-				}
-			}
-		case containsPredicate:
-			iter := pred.path.Iter(s.node)
-			for iter.Next() {
-				if iter.Node().contains(pred.value) {
-					return true
-				}
-			}
-		default:
-			panic(fmt.Sprintf("internal error: unknown predicate type: %#v", s.step.pred))
+	}
+	return false
+}
+
+func (s *pathStepState) test(pred predicate) bool {
+	switch pred := pred.(type) {
+	case positionPredicate:
+		if pred.pos == s.pos {
+			return true
 		}
+	case existsPredicate:
+		if pred.path.Exists(s.node) {
+			return true
+		}
+	case equalsPredicate:
+		iter := pred.path.Iter(s.node)
+		for iter.Next() {
+			if iter.Node().equals(pred.value) {
+				return true
+			}
+		}
+	case containsPredicate:
+		iter := pred.path.Iter(s.node)
+		for iter.Next() {
+			if iter.Node().contains(pred.value) {
+				return true
+			}
+		}
+	case andPredicate:
+		for _, sub := range pred.sub {
+			if !s.test(sub) {
+				return false
+			}
+		}
+		return true
+	case orPredicate:
+		for _, sub := range pred.sub {
+			if s.test(sub) {
+				return true
+			}
+		}
+	default:
+		panic(fmt.Sprintf("internal error: unknown predicate type: %#v", s.step.pred))
 	}
 	return false
 }
@@ -359,12 +376,32 @@ type containsPredicate struct {
 	value string
 }
 
+type andPredicate struct {
+	sub []predicate
+}
+
+type orPredicate struct {
+	sub []predicate
+}
+
+// predicate is a marker interface for predicate types.
+type predicate interface {
+	predicate()
+}
+
+func (positionPredicate) predicate() {}
+func (existsPredicate) predicate()   {}
+func (equalsPredicate) predicate()   {}
+func (containsPredicate) predicate() {}
+func (andPredicate) predicate()      {}
+func (orPredicate) predicate()       {}
+
 type pathStep struct {
 	root bool
 	axis string
 	name string
 	kind nodeKind
-	pred interface{}
+	pred predicate
 }
 
 func (step *pathStep) match(node *Node) bool {
@@ -515,11 +552,25 @@ func (c *pathCompiler) parsePath() (path *Path, err error) {
 		}
 		if c.skipByte('[') {
 			c.skipSpaces()
+			type state struct {
+				sub []predicate
+				and bool
+			}
+			var stack []state
+			var sub []predicate
+			var and bool
+		NextPred:
+			if c.skipByte('(') {
+				stack = append(stack, state{sub, and})
+				sub = nil
+				and = false
+			}
+			var next predicate
 			if pos, ok := c.parseInt(); ok {
 				if pos == 0 {
 					return nil, c.errorf("positions start at 1")
 				}
-				step.pred = positionPredicate{pos}
+				next = positionPredicate{pos}
 			} else if c.skipString("contains(") {
 				path, err := c.parsePath()
 				if err != nil {
@@ -538,7 +589,7 @@ func (c *pathCompiler) parsePath() (path *Path, err error) {
 				if !c.skipByte(')') {
 					return nil, c.errorf("contains() missing ')'")
 				}
-				step.pred = containsPredicate{path, value}
+				next = containsPredicate{path, value}
 			} else {
 				path, err := c.parsePath()
 				if err != nil {
@@ -556,12 +607,57 @@ func (c *pathCompiler) parsePath() (path *Path, err error) {
 					if err != nil {
 						return nil, c.errorf("%v", err)
 					}
-					step.pred = equalsPredicate{path, value}
+					next = equalsPredicate{path, value}
 				} else {
-					step.pred = existsPredicate{path}
+					next = existsPredicate{path}
 				}
 			}
-			c.skipSpaces()
+		HandleNext:
+			if and {
+				p := sub[len(sub)-1].(andPredicate)
+				p.sub = append(p.sub, next)
+				sub[len(sub)-1] = p
+			} else {
+				sub = append(sub, next)
+			}
+			if c.skipSpaces() {
+				mark := c.i
+				if c.skipString("and") && c.skipSpaces() {
+					if !and {
+						and = true
+						sub[len(sub)-1] = andPredicate{[]predicate{sub[len(sub)-1]}}
+					}
+					goto NextPred
+				} else if c.skipString("or") && c.skipSpaces() {
+					and = false
+					goto NextPred
+				} else {
+					c.i = mark
+				}
+			}
+			if c.skipByte(')') {
+				if len(stack) == 0 {
+					return nil, c.errorf("unexpected ')'")
+				}
+				if len(sub) == 1 {
+					next = sub[0]
+				} else {
+					next = orPredicate{sub}
+				}
+				s := stack[len(stack)-1]
+				stack = stack[:len(stack)-1]
+				sub = s.sub
+				and = s.and
+				goto HandleNext
+			}
+			if len(stack) > 0 {
+				return nil, c.errorf("expected ')'")
+			}
+			if len(sub) == 1 {
+				step.pred = sub[0]
+			} else {
+				step.pred = orPredicate{sub}
+			}
 			if !c.skipByte(']') {
 				return nil, c.errorf("expected ']'")
 			}
@@ -634,13 +730,15 @@ func (c *pathCompiler) peekByte(b byte) bool {
 	return c.i < len(c.path) && c.path[c.i] == b
 }
 
-func (c *pathCompiler) skipSpaces() {
+func (c *pathCompiler) skipSpaces() bool {
+	mark := c.i
 	for c.i < len(c.path) {
 		if c.path[c.i] != ' ' {
 			break
 		}
 		c.i++
 	}
+	return c.i != mark
 }
 
 func (c *pathCompiler) skipString(s string) bool {

@@ -15,8 +15,8 @@
 //     - All axes are supported ("child", "following-sibling", etc)
 //     - All abbreviated forms are supported (".", "//", etc)
 //     - All node types except for namespace are supported
-//     - Predicates must be [N], [path], [path=literal] or [contains(path, literal)]
-//     - Only a single predicate is supported per path step
+//     - Predicates may be [N], [path], [path=literal] or [contains(path, literal)]
+//     - Predicates may be joined with "or", "and", and parenthesis
 //     - Richer expressions and namespaces are not supported
 //
 // For example, assuming the following document:
@@ -55,9 +55,10 @@
 //     /library/book/character[2]/name                  =>  "Snoopy"
 //     /library/book/character[born='1950-10-04']/name  =>  "Snoopy"
 //     /library/book//node()[@id='PP']/name             =>  "Peppermint Patty"
-//     //book[author/@id='CMS']/title                   =>  "Being a Dog Is a Full-Time Job"},
+//     //book[author/@id='CMS']/title                   =>  "Being a Dog Is a Full-Time Job",
 //     /library/book/preceding::comment()               =>  " Great book. "
 //     //*[contains(born,'1922')]/name                  =>  "Charles M Schulz"
+//     //*[@id='PP' or @id='Snoopy']/born               =>  {"1966-08-22", "1950-10-04"}
 //
 // To run an expression, compile it, and then apply the compiled path to any
 // number of context nodes, from one or more parsed xml documents:

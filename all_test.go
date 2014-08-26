@@ -7,6 +7,7 @@ import (
 
 	. "gopkg.in/check.v1"
 	"gopkg.in/xmlpath.v2"
+	"strings"
 )
 
 func Test(t *testing.T) {
@@ -60,7 +61,9 @@ func (s *BasicSuite) TestLibraryTable(c *C) {
 		cmt := Commentf("xml path: %s", test.path)
 		path, err := xmlpath.Compile(test.path)
 		if want, ok := test.result.(cerror); ok {
-			c.Assert(err, ErrorMatches, string(want), cmt)
+			if !strings.Contains(err.Error(), string(want)) {
+				c.Fatalf("error should contain `%s` but got `%s`", want, err.Error())
+			}
 			c.Assert(path, IsNil, cmt)
 			continue
 		}
@@ -126,6 +129,8 @@ var libraryTable = []struct {
 	{"/library/book//node()[@id='PP']/name", "Peppermint Patty"},
 	{"//book[author/@id='CMS']/title", "Being a Dog Is a Full-Time Job"},
 	{"/library/book/preceding::comment()", " Great book. "},
+	{"//*[contains(born,'1922')]/name", "Charles M Schulz"},
+	{"//*[@id='PP' or @id='Snoopy']/born", []string{"1966-08-22", "1950-10-04"}},
 
 	// A few simple
 	{"/library/book/isbn", exists(true)},
@@ -153,16 +158,16 @@ var libraryTable = []struct {
 	{"/library/book/author/*", []string{"Charles M Schulz", "1922-11-26", "2000-02-12", "Charles M Schulz", "1922-11-26", "2000-02-12"}},
 
 	// Unsupported axis and note test.
-	{"/foo()", cerror(`compiling xml path "/foo\(\)":5: unsupported expression: foo\(\)`)},
-	{"/node(", cerror(`compiling xml path "/node\(":6: node\(\) missing '\)'`)},
-	{"/foo::node()", cerror(`compiling xml path "/foo::node\(\)":6: unsupported axis: "foo"`)},
+	{"/foo()", cerror(`compiling xml path "/foo()":5: unsupported expression: foo()`)},
+	{"/node(", cerror(`compiling xml path "/node(":6: node() missing ')'`)},
+	{"/foo::node()", cerror(`compiling xml path "/foo::node()":6: unsupported axis: "foo"`)},
 
 	// The attribute axis.
 	{"/library/book/title/attribute::lang", "en"},
 	{"/library/book/title/@lang", "en"},
 	{"/library/book/@available/parent::node()/@id", "b0836217462"},
 	{"/library/book/attribute::*", []string{"b0836217462", "true", "b0883556316", "true"}},
-	{"/library/book/attribute::text()", cerror(`.*: text\(\) cannot succeed on axis "attribute"`)},
+	{"/library/book/attribute::text()", cerror(`: text() cannot succeed on axis "attribute"`)},
 
 	// The self axis.
 	{"/library/book/isbn/./self::node()", "0836217462"},
@@ -212,14 +217,14 @@ var libraryTable = []struct {
 	// Comments.
 	{"/library/comment()", []string{" Great book. ", " Another great book. "}},
 	{"//self::comment()", []string{" Great book. ", " Another great book. "}},
-	{`comment("")`, cerror(`.*: comment\(\) has no arguments`)},
+	{`comment("")`, cerror(`: comment() has no arguments`)},
 
 	// Processing instructions.
 	{`/library/book/author/processing-instruction()`, `"go rocks"`},
 	{`/library/book/author/processing-instruction("echo")`, `"go rocks"`},
 	{`/library//processing-instruction("echo")`, `"go rocks"`},
 	{`/library/book/author/processing-instruction("foo")`, exists(false)},
-	{`/library/book/author/processing-instruction(")`, cerror(`.*: missing '"'`)},
+	{`/library/book/author/processing-instruction(")`, cerror(`: missing '"'`)},
 
 	// Predicates.
 	{"library/book[@id='b0883556316']/isbn", []string{"0883556316"}},
@@ -228,14 +233,25 @@ var libraryTable = []struct {
 	{"library/book[quote]/@id", []string{"b0836217462"}},
 	{"library/book[./character/born='1922-07-17']/@id", []string{"b0883556316"}},
 	{"library/book[2]/isbn", []string{"0883556316"}},
-	{"library/book[0]/isbn", cerror(".*: positions start at 1")},
-	{"library/book[-1]/isbn", cerror(".*: positions must be positive")},
+	{"library/book[0]/isbn", cerror(": positions start at 1")},
+	{"library/book[-1]/isbn", cerror(": positions must be positive")},
 	{"//title[contains(.,'ney Google and')]", "Barney Google and Snuffy Smith"},
 	{"//@id[contains(.,'0836')]", "b0836217462"},
 	{"//*[contains(born,'1922')]/name", "Charles M Schulz"},
 
+	// Multiple predicates.
+	{"library/book/character[@id='Snoopy' and ./born='1950-10-04']/born", []string{"1950-10-04"}},
+	{"library/book/character[@id='Snoopy' or @id='Lucy']/born", []string{"1950-10-04", "1952-03-03"}},
+	{"library/book/character[@id='Snoopy' and ./born='1950-10-04' or @id='Lucy' and ./born='1952-03-03']/born", []string{"1950-10-04", "1952-03-03"}},
+	{"library/book/character[@id='Snoopy' or @id='Lucy' and @id='NOPE']/born", []string{"1950-10-04"}},
+	{"library/book/character[@id='Snoopy' and @id='NOPE' or @id='Lucy']/born", []string{"1952-03-03"}},
+	{"library/book/character[(@id='Snoopy' or @id='Lucy') and (./born='1950-10-04' or ./born='1952-03-03')]/born", []string{"1950-10-04", "1952-03-03"}},
+
 	// Bogus expressions.
-	{"/foo)", cerror(`compiling xml path "/foo\)":4: unexpected '\)'`)},
+	{"/foo)", cerror(`compiling xml path "/foo)":4: unexpected ')'`)},
+	{"/foo[", cerror(`compiling xml path "/foo[":5: missing name`)},
+	{"/foo[@id)]", cerror(`compiling xml path "/foo[@id)]":9: unexpected ')'`)},
+	{"/foo[(@id]", cerror(`compiling xml path "/foo[(@id]":9: expected ')'`)},
 
 	// Whitespace handling.
 	{" / descendant-or-self :: node() // child :: book / child :: * [ contains( . , '083' ) ] ", "0836217462"},
