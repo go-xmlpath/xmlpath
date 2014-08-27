@@ -238,6 +238,8 @@ var libraryTable = []struct {
 	{"//title[contains(.,'ney Google and')]", "Barney Google and Snuffy Smith"},
 	{"//@id[contains(.,'0836')]", "b0836217462"},
 	{"//*[contains(born,'1922')]/name", "Charles M Schulz"},
+	{"library/book[not(@id)]", exists(false)},
+	{"library/book[not(@foo) and @id='b0883556316']/isbn", []string{"0883556316"}},
 
 	// Multiple predicates.
 	{"library/book/character[@id='Snoopy' and ./born='1950-10-04']/born", []string{"1950-10-04"}},

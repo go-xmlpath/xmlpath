@@ -155,6 +155,11 @@ func (s *pathStepState) test(pred predicate) bool {
 				return true
 			}
 		}
+	case notPredicate:
+		iter := pred.path.Iter(s.node)
+		if !iter.Next() {
+			return true
+		}
 	case andPredicate:
 		for _, sub := range pred.sub {
 			if !s.test(sub) {
@@ -376,6 +381,10 @@ type containsPredicate struct {
 	value string
 }
 
+type notPredicate struct {
+	path *Path
+}
+
 type andPredicate struct {
 	sub []predicate
 }
@@ -393,6 +402,7 @@ func (positionPredicate) predicate() {}
 func (existsPredicate) predicate()   {}
 func (equalsPredicate) predicate()   {}
 func (containsPredicate) predicate() {}
+func (notPredicate) predicate()      {}
 func (andPredicate) predicate()      {}
 func (orPredicate) predicate()       {}
 
@@ -590,6 +600,17 @@ func (c *pathCompiler) parsePath() (path *Path, err error) {
 					return nil, c.errorf("contains() missing ')'")
 				}
 				next = containsPredicate{path, value}
+			} else if c.skipString("not(") {
+				// TODO Generalize to handle any predicate expression.
+				path, err := c.parsePath()
+				if err != nil {
+					return nil, err
+				}
+				c.skipSpaces()
+				if !c.skipByte(')') {
+					return nil, c.errorf("not() missing ')'")
+				}
+				next = notPredicate{path}
 			} else {
 				path, err := c.parsePath()
 				if err != nil {

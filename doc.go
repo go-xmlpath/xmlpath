@@ -15,7 +15,7 @@
 //     - All axes are supported ("child", "following-sibling", etc)
 //     - All abbreviated forms are supported (".", "//", etc)
 //     - All node types except for namespace are supported
-//     - Predicates may be [N], [path], [path=literal] or [contains(path, literal)]
+//     - Predicates may be [N], [path], [not(path)], [path=literal] or [contains(path, literal)]
 //     - Predicates may be joined with "or", "and", and parenthesis
 //     - Richer expressions and namespaces are not supported
 //
