@@ -322,6 +322,80 @@ var libraryXml = []byte(`
 </library>
 `)
 
+func (s *BasicSuite) TestNamespace(c *C) {
+	node, err := xmlpath.Parse(bytes.NewBuffer(namespaceXml))
+	c.Assert(err, IsNil)
+	for _, test := range namespaceTable {
+		cmt := Commentf("xml path: %s", test.path)
+		path, err := xmlpath.CompileWithNamespace(test.path, namespaces)
+		if want, ok := test.result.(cerror); ok {
+			c.Assert(err, ErrorMatches, string(want), cmt)
+			c.Assert(path, IsNil, cmt)
+			continue
+		}
+		c.Assert(err, IsNil)
+		switch want := test.result.(type) {
+		case string:
+			got, ok := path.String(node)
+			c.Assert(ok, Equals, true, cmt)
+			c.Assert(got, Equals, want, cmt)
+			c.Assert(path.Exists(node), Equals, true, cmt)
+			iter := path.Iter(node)
+			iter.Next()
+			node := iter.Node()
+			c.Assert(node.String(), Equals, want, cmt)
+			c.Assert(string(node.Bytes()), Equals, want, cmt)
+		case []string:
+			var alls []string
+			var allb []string
+			iter := path.Iter(node)
+			for iter.Next() {
+				alls = append(alls, iter.Node().String())
+				allb = append(allb, string(iter.Node().Bytes()))
+			}
+			c.Assert(alls, DeepEquals, want, cmt)
+			c.Assert(allb, DeepEquals, want, cmt)
+			s, sok := path.String(node)
+			b, bok := path.Bytes(node)
+			if len(want) == 0 {
+				c.Assert(sok, Equals, false, cmt)
+				c.Assert(bok, Equals, false, cmt)
+				c.Assert(s, Equals, "")
+				c.Assert(b, IsNil)
+			} else {
+				c.Assert(sok, Equals, true, cmt)
+				c.Assert(bok, Equals, true, cmt)
+				c.Assert(s, Equals, alls[0], cmt)
+				c.Assert(string(b), Equals, alls[0], cmt)
+				c.Assert(path.Exists(node), Equals, true, cmt)
+			}
+		case exists:
+			wantb := bool(want)
+			ok := path.Exists(node)
+			c.Assert(ok, Equals, wantb, cmt)
+			_, ok = path.String(node)
+			c.Assert(ok, Equals, wantb, cmt)
+		}
+	}
+}
+
+var namespaceXml = []byte(`<s:Envelope xml:lang="en-US" xmlns:s="http://www.w3.org/2003/05/soap-envelope" xmlns:a="http://schemas.xmlsoap.org/ws/2004/08/addressing" xmlns:w="http://schemas.dmtf.org/wbem/wsman/1/wsman.xsd" xmlns:rsp="http://schemas.microsoft.com/wbem/wsman/1/windows/shell" xmlns:p="http://schemas.microsoft.com/wbem/wsman/1/wsman.xsd"><s:Header><a:Action>http://schemas.microsoft.com/wbem/wsman/1/windows/shell/ReceiveResponse</a:Action><a:MessageID>uuid:AAD46BD4-6315-4C3C-93D4-94A55773287D</a:MessageID><a:To>http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous</a:To><a:RelatesTo>uuid:18A52A06-9027-41DC-8850-3F244595AF62</a:RelatesTo></s:Header><s:Body><rsp:ReceiveResponse><rsp:Stream Name="stdout" CommandId="1A6DEE6B-EC68-4DD6-87E9-030C0048ECC4">VGhhdCdzIGFsbCBmb2xrcyEhIQ==</rsp:Stream><rsp:Stream Name="stderr" CommandId="1A6DEE6B-EC68-4DD6-87E9-030C0048ECC4">VGhpcyBpcyBzdGRlcnIsIEknbSBwcmV0dHkgc3VyZSE=</rsp:Stream><rsp:CommandState CommandId="1A6DEE6B-EC68-4DD6-87E9-030C0048ECC4" State="http://schemas.microsoft.com/wbem/wsman/1/windows/shell/CommandState/Running"></rsp:CommandState></rsp:ReceiveResponse></s:Body></s:Envelope>`)
+
+var namespaces = []xmlpath.Namespace {
+	{ "a", "http://schemas.xmlsoap.org/ws/2004/08/addressing" },
+	{ "rsp", "http://schemas.microsoft.com/wbem/wsman/1/windows/shell" },
+}
+
+var namespaceTable = []struct{ path string; result interface{} }{
+	{ "//a:To", "http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous" },
+	{ "//rsp:Stream[@Name='stdout']", "VGhhdCdzIGFsbCBmb2xrcyEhIQ==" },
+	{ "//rsp:CommandState/@CommandId", "1A6DEE6B-EC68-4DD6-87E9-030C0048ECC4" },
+	{ "//*[@State='http://schemas.microsoft.com/wbem/wsman/1/windows/shell/CommandState/Done']", exists(false) },
+	{ "//rsp:Stream", []string{ "VGhhdCdzIGFsbCBmb2xrcyEhIQ==", "VGhpcyBpcyBzdGRlcnIsIEknbSBwcmV0dHkgc3VyZSE=" }},
+	{ "//s:Header", cerror(`.*: unknown namespace prefix: s`) },
+}
+
+
 func (s *BasicSuite) BenchmarkParse(c *C) {
 	for i := 0; i < c.N; i++ {
 		_, err := xmlpath.Parse(bytes.NewBuffer(instancesXml))
