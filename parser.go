@@ -164,6 +164,32 @@ func (node *Node) contains(s string) (ok bool) {
 	return false
 }
 
+// startswith returns whether the string value of node has prefix s
+func (node *Node) startsWith(s string) (ok bool) {
+	if len(s) == 0 {
+		return true
+	}
+	if node.kind == attrNode {
+		return strings.HasPrefix(node.attr, s)
+	}
+	si := 0
+	for i := node.pos; i < node.end; i++ {
+		if node.nodes[i].kind != textNode {
+			continue
+		}
+		for _, c := range node.nodes[i].text {
+			if c != s[si] {
+				break
+			}
+			si++
+			if si == len(s) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // Parse reads an xml document from r, parses it, and returns its root node.
 func Parse(r io.Reader) (*Node, error) {
 	return ParseDecoder(xml.NewDecoder(r))
