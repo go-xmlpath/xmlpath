@@ -156,10 +156,7 @@ func (s *pathStepState) test(pred predicate) bool {
 			}
 		}
 	case notPredicate:
-		iter := pred.path.Iter(s.node)
-		if !iter.Next() {
-			return true
-		}
+		return !s.test(pred.uniSub)
 	case andPredicate:
 		for _, sub := range pred.sub {
 			if !s.test(sub) {
@@ -382,7 +379,7 @@ type containsPredicate struct {
 }
 
 type notPredicate struct {
-	path *Path
+	uniSub predicate
 }
 
 type andPredicate struct {
@@ -565,13 +562,14 @@ func (c *pathCompiler) parsePath() (path *Path, err error) {
 			type state struct {
 				sub []predicate
 				and bool
+				not bool
 			}
 			var stack []state
 			var sub []predicate
 			var and bool
 		NextPred:
 			if c.skipByte('(') {
-				stack = append(stack, state{sub, and})
+				stack = append(stack, state{sub: sub, and: and})
 				sub = nil
 				and = false
 			}
@@ -601,16 +599,10 @@ func (c *pathCompiler) parsePath() (path *Path, err error) {
 				}
 				next = containsPredicate{path, value}
 			} else if c.skipString("not(") {
-				// TODO Generalize to handle any predicate expression.
-				path, err := c.parsePath()
-				if err != nil {
-					return nil, err
-				}
-				c.skipSpaces()
-				if !c.skipByte(')') {
-					return nil, c.errorf("not() missing ')'")
-				}
-				next = notPredicate{path}
+				stack = append(stack, state{sub: sub, and: and, not: true})
+				sub = nil
+				and = false
+				goto NextPred
 			} else {
 				path, err := c.parsePath()
 				if err != nil {
@@ -669,6 +661,9 @@ func (c *pathCompiler) parsePath() (path *Path, err error) {
 				stack = stack[:len(stack)-1]
 				sub = s.sub
 				and = s.and
+				if s.not {
+					next = notPredicate{next}
+				}
 				goto HandleNext
 			}
 			if len(stack) > 0 {
