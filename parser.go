@@ -1,10 +1,11 @@
 package xmlpath
 
 import (
-	"code.google.com/p/go.net/html"
 	"encoding/xml"
 	"io"
 	"strings"
+
+	"golang.org/x/net/html"
 )
 
 // Node is an item in an xml tree that was compiled to
