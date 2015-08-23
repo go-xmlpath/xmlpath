@@ -240,6 +240,10 @@ var libraryTable = []struct {
 	{"//*[contains(born,'1922')]/name", "Charles M Schulz"},
 	{"library/book[not(@id)]", exists(false)},
 	{"library/book[not(@foo) and @id='b0883556316']/isbn", []string{"0883556316"}},
+	{"library/book[not(@id='b0883556316')]/isbn", []string{"0836217462"}},
+	{"library/book/character[not(@id='Snoopy' and ./born='1950-10-04')]", exists(true)},
+	{"library/book/character[@id='Snoopy' and ./born='1950-10-04' or not(@id='Lucy') and ./born='1952-03-03']/born", []string{"1950-10-04"}},
+	{"library/book[@id='b0836217462']/character[not(@id='Snoopy' and ./born='1950-10-04' or @id='Lucy' and ./born='1952-03-03')]/born", []string{"1966-08-22", "1951-05-30"}},
 
 	// Multiple predicates.
 	{"library/book/character[@id='Snoopy' and ./born='1950-10-04']/born", []string{"1950-10-04"}},
