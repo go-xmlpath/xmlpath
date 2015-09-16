@@ -6,6 +6,12 @@ import (
 	"unicode/utf8"
 )
 
+// Namespace represents a given XML Namespace
+type Namespace struct {
+	Prefix string
+	Uri    string
+}
+
 // Path is a compiled path that can be applied to a context
 // node to obtain a matching node set.
 // A single Path can be applied concurrently to any number
@@ -407,17 +413,42 @@ func (andPredicate) predicate()      {}
 func (orPredicate) predicate()       {}
 
 type pathStep struct {
-	root bool
-	axis string
-	name string
-	kind nodeKind
-	pred predicate
+	root   bool
+	axis   string
+	name   string
+	prefix string
+	uri    string
+	kind   nodeKind
+	pred   predicate
 }
 
 func (step *pathStep) match(node *Node) bool {
 	return node.kind != endNode &&
 		(step.kind == anyNode || step.kind == node.kind) &&
-		(step.name == "*" || node.name.Local == step.name)
+		(step.name == "*" || node.name.Local == step.name &&
+			(node.name.Space != "" && node.name.Space == step.uri || node.name.Space == ""))
+}
+
+func compile(path string, ns []Namespace) (*Path, error) {
+	c := pathCompiler{path, 0, ns}
+	if path == "" {
+		return nil, c.errorf("empty path")
+	}
+	p, err := c.parsePath()
+	if err != nil {
+		return nil, err
+	}
+	return p, nil
+}
+
+// Compile returns the compiled path.
+func Compile(path string) (*Path, error) {
+	return compile(path, []Namespace{})
+}
+
+// Compile the path with the knowledge of the given namespaces
+func CompileWithNamespace(path string, ns []Namespace) (*Path, error) {
+	return compile(path, ns)
 }
 
 // MustCompile returns the compiled path, and panics if
@@ -430,22 +461,21 @@ func MustCompile(path string) *Path {
 	return e
 }
 
-// Compile returns the compiled path.
-func Compile(path string) (*Path, error) {
-	c := pathCompiler{path, 0}
-	if path == "" {
-		return nil, c.errorf("empty path")
-	}
-	p, err := c.parsePath()
+// MustCompileWithNamespace returns the compiled path with
+// knowledge of the given namespaces, and panics if
+// there are any errors.
+func MustCompileWithNamespace(path string, ns []Namespace) *Path {
+	e, err := CompileWithNamespace(path, ns)
 	if err != nil {
-		return nil, err
+		panic(err)
 	}
-	return p, nil
+	return e
 }
 
 type pathCompiler struct {
 	path string
 	i    int
+	ns   []Namespace
 }
 
 func (c *pathCompiler) errorf(format string, args ...interface{}) error {
@@ -496,29 +526,43 @@ func (c *pathCompiler) parsePath() (path *Path, err error) {
 			} else {
 				if c.skipByte(':') {
 					if !c.skipByte(':') {
-						return nil, c.errorf("missing ':'")
+						mark = c.i
+						if c.skipName() {
+							step.prefix = step.name
+							step.name = c.path[mark:c.i]
+							found := false
+							for _,ns := range c.ns {
+								if ns.Prefix == step.prefix {
+									step.uri = ns.Uri
+									found = true
+									break
+								}
+							}
+							if !found {
+								return nil,c.errorf("unknown namespace prefix: %s",step.prefix)
+							}
+						}
+					} else {
+						c.skipSpaces()
+						switch step.name {
+						case "attribute":
+							step.kind = attrNode
+						case "self", "child", "parent":
+						case "descendant", "descendant-or-self":
+						case "ancestor", "ancestor-or-self":
+						case "following", "following-sibling":
+						case "preceding", "preceding-sibling":
+						default:
+							return nil, c.errorf("unsupported axis: %q", step.name)
+						}
+						step.axis = step.name
+						mark = c.i
+						if !c.skipName() {
+							return nil, c.errorf("missing name")
+						}
+						step.name = c.path[mark:c.i]
+						c.skipSpaces()
 					}
-					c.skipSpaces()
-					switch step.name {
-					case "attribute":
-						step.kind = attrNode
-					case "self", "child", "parent":
-					case "descendant", "descendant-or-self":
-					case "ancestor", "ancestor-or-self":
-					case "following", "following-sibling":
-					case "preceding", "preceding-sibling":
-					default:
-						return nil, c.errorf("unsupported axis: %q", step.name)
-					}
-					step.axis = step.name
-
-					mark = c.i
-					if !c.skipName() {
-						return nil, c.errorf("missing name")
-					}
-					step.name = c.path[mark:c.i]
-
-					c.skipSpaces()
 				}
 				if c.skipByte('(') {
 					c.skipSpaces()
