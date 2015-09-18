@@ -42,6 +42,14 @@ const (
 	procInstNode
 )
 
+// Name returns the name value of node.
+// Use it to get:
+//   Space - node namespace
+//   Name  - node local name
+func (node *Node) Name() xml.Name {
+        return node.name
+}
+
 // String returns the string value of node.
 //
 // The string value of a node is:
