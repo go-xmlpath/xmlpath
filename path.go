@@ -21,6 +21,7 @@ func (p *Path) Iter(context *Node) *Iter {
 	iter := Iter{
 		make([]pathStepState, len(p.steps)),
 		make([]bool, len(context.nodes)),
+		len(context.nodes),
 	}
 	for i := range p.steps {
 		iter.state[i].step = &p.steps[i]
@@ -60,8 +61,9 @@ func (p *Path) Bytes(node *Node) (b []byte, ok bool) {
 
 // Iter iterates over node sets.
 type Iter struct {
-	state []pathStepState
-	seen  []bool
+	state  []pathStepState
+	seen   []bool
+	Length int
 }
 
 // Node returns the current node.
