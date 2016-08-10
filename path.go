@@ -134,9 +134,33 @@ func (s *pathStepState) next() bool {
 func (s *pathStepState) test(pred predicate) bool {
 	switch pred := pred.(type) {
 	case positionPredicate:
-		if pred.pos == s.pos {
-			return true
+		switch pred.op {
+		case EQ:
+			if pred.pos == s.pos {
+				return true
+			}
+		case NEQ:
+			if pred.pos != s.pos {
+				return true
+			}
+		case LT:
+			if pred.pos > s.pos {
+				return true
+			}
+		case LTEQ:
+			if pred.pos >= s.pos {
+				return true
+			}
+		case GT:
+			if pred.pos < s.pos {
+				return true
+			}
+		case GTEQ:
+			if pred.pos <= s.pos {
+				return true
+			}
 		}
+
 	case existsPredicate:
 		if pred.path.Exists(s.node) {
 			return true
@@ -363,8 +387,20 @@ func (s *pathStepState) _next() bool {
 	return false
 }
 
+type Operator int
+
+const (
+	EQ Operator = iota
+	NEQ
+	LT
+	GT
+	LTEQ
+	GTEQ
+)
+
 type positionPredicate struct {
 	pos int
+	op Operator
 }
 
 type existsPredicate struct {
@@ -580,7 +616,17 @@ func (c *pathCompiler) parsePath() (path *Path, err error) {
 				if pos == 0 {
 					return nil, c.errorf("positions start at 1")
 				}
-				next = positionPredicate{pos}
+				next = positionPredicate{pos, EQ}
+			} else if c.skipString("position()") {
+				c.skipSpaces()
+				op, ok := c.parseOp()
+				c.skipSpaces()
+				pos, ok2 := c.parseInt()
+
+				if (!ok || !ok2) {
+					return nil, c.errorf("invalid position() predicate")
+				}
+				next = positionPredicate{pos, op}
 			} else if c.skipString("contains(") {
 				path, err := c.parsePath()
 				if err != nil {
@@ -727,6 +773,25 @@ func (c *pathCompiler) parseInt() (v int, ok bool) {
 		return 0, false
 	}
 	return v, true
+}
+
+func (c *pathCompiler) parseOp() (op Operator, ok bool) {
+	if c.skipByte('=') {
+		return EQ, true
+	} else if c.skipByte('!') && c.skipByte('=') {
+		return NEQ, true
+	} else if c.skipByte('<') {
+		if c.skipByte('=') {
+			return LTEQ, true
+		}
+		return LT, true
+	} else if c.skipByte('>') {
+		if c.skipByte('=') {
+			return GTEQ, true
+		}
+		return GT, true
+	}
+	return -1, false
 }
 
 func (c *pathCompiler) skipByte(b byte) bool {
