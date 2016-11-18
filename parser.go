@@ -164,6 +164,10 @@ func (node *Node) contains(s string) (ok bool) {
 	return false
 }
 
+func (n *Node) Name() xml.Name {
+	return n.name
+}
+
 // Parse reads an xml document from r, parses it, and returns its root node.
 func Parse(r io.Reader) (*Node, error) {
 	return ParseDecoder(xml.NewDecoder(r))
