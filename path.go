@@ -137,6 +137,11 @@ func (s *pathStepState) test(pred predicate) bool {
 		if pred.pos == s.pos {
 			return true
 		}
+	case lastPredicate:
+		ps := *s
+		if !ps._next() {
+			return true
+		}
 	case existsPredicate:
 		if pred.path.Exists(s.node) {
 			return true
@@ -367,6 +372,8 @@ type positionPredicate struct {
 	pos int
 }
 
+type lastPredicate struct{}
+
 type existsPredicate struct {
 	path *Path
 }
@@ -399,6 +406,7 @@ type predicate interface {
 }
 
 func (positionPredicate) predicate() {}
+func (lastPredicate) predicate()     {}
 func (existsPredicate) predicate()   {}
 func (equalsPredicate) predicate()   {}
 func (containsPredicate) predicate() {}
@@ -581,6 +589,8 @@ func (c *pathCompiler) parsePath() (path *Path, err error) {
 					return nil, c.errorf("positions start at 1")
 				}
 				next = positionPredicate{pos}
+			} else if c.skipString("last()") {
+				next = lastPredicate{}
 			} else if c.skipString("contains(") {
 				path, err := c.parsePath()
 				if err != nil {
