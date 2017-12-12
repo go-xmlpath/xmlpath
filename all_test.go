@@ -23,7 +23,7 @@ var trivialXml = []byte(`<root>a<foo>b</foo>c<bar>d</bar>e<bar>f</bar>g</root>`)
 func (s *BasicSuite) TestRootText(c *C) {
 	node, err := xmlpath.Parse(bytes.NewBuffer(trivialXml))
 	c.Assert(err, IsNil)
-	path := xmlpath.MustCompile("/")
+	path, _ := xmlpath.MustCompile("/")
 	result, ok := path.String(node)
 	c.Assert(ok, Equals, true)
 	c.Assert(result, Equals, "abcdefg")
