@@ -422,12 +422,12 @@ func (step *pathStep) match(node *Node) bool {
 
 // MustCompile returns the compiled path, and panics if
 // there are any errors.
-func MustCompile(path string) *Path {
+func MustCompile(path string) (*Path, error) {
 	e, err := Compile(path)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
-	return e
+	return e, nil
 }
 
 // Compile returns the compiled path.
