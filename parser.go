@@ -104,7 +104,7 @@ func (node *Node) equals(s string) bool {
 	for i := node.pos; i < node.end; i++ {
 		if node.nodes[i].kind == textNode {
 			for _, c := range node.nodes[i].text {
-				if si > len(s) {
+				if si >= len(s) {
 					return false
 				}
 				if s[si] != c {
