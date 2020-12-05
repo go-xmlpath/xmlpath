@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	. "gopkg.in/check.v1"
-	"gopkg.in/xmlpath.v2"
+	"gopkg.in/abemedia/xmlpath.v2"
 	"strings"
 )
 
